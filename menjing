@@ -35,8 +35,8 @@ uint8_t tMonth, tWeekday, tDay, tHour, tMinute, tSecond;
 
 //WEBSITE     
 #define HOST_NAME   "api.heclouds.com"     //调用API的网址
-#define DEVICEID   "23255685"          //设备ID
-#define PROJECTID "105033"           //产品ID
+#define DEVICEID   "xxxxxxxx"          //设备ID
+#define PROJECTID "xxxxxx"           //产品ID
 #define HOST_PORT   (80)
 String apiKey="o1ENIWddIyWurD8hSgZTbWmm5aY= ";     //APIkey
 char buf[10];
