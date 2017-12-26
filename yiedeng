@@ -1,0 +1,66 @@
+include <Adafruit_NeoPixel.h>
+
+#include <Servo.h>
+
+#define PIN A1      //led引脚
+
+#define humanHotSensor 4        //人体红外传感器引脚
+
+#define PIN_NUM 2 
+
+#define Light_PIN A6         //光照传感器接A6引脚
+
+#define Light_value1 200
+
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(PIN_NUM, PIN, NEO_GRB + NEO_KHZ800);  //该函数第一个参数控制串联灯的个数，第二个是控制用哪个pin脚输出，第三个显示颜色和变化闪烁频率
+
+
+bool humanHotState = 0;      //定义人体红外数据
+
+int sensorValue;
+
+void setup() 
+{
+  Serial.begin(9600);
+  
+  strip.begin();    //初始化led
+  
+  pinMode(humanHotSensor, INPUT);   //初始化人体红外传感器
+
+}
+
+
+void loop() 
+{
+   sensorValue = analogRead(Light_PIN);       //获取光强信息
+   
+   Serial.println(sensorValue );  
+   
+if (sensorValue < Light_value1)        //如果光强低于200，系统启动
+{
+   humanHotState = digitalRead(humanHotSensor); //获取人体红外信息
+   
+   Serial.println( humanHotState);  //将人体红外信息传至穿口监视器上
+   
+if(humanHotState==1)
+{
+  strip.setPixelColor(0, strip.Color(255, 255, 0));//发光
+  
+  strip.show();   //LED显示
+  
+  delay(30000);  //延迟30秒输出
+}
+
+else
+{
+  strip.setPixelColor(0, strip.Color(0, 0, 0));//灯灭
+  strip.show();   
+  delay(100);  
+}
+
+   delay(500);
+}
+strip.setPixelColor(0, strip.Color(0, 0, 0));//灯灭
+  strip.show();   
+delay(500);
+}
