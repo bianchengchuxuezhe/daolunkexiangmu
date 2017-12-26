@@ -1,0 +1,249 @@
+#include <Microduino_RTC.h>
+
+
+RTC rtc;
+
+/* 设置RTC启动时间
+ * 年, 月, 星期, 日, 时, 分, 秒 */
+DateTime dateTime = {2017, 12, 2, 18, 21, 8, 40}; //设定时钟的起始时间
+
+uint16_t tYear;
+uint8_t tMonth, tWeekday, tDay, tHour, tMinute, tSecond; 
+
+//时钟部分=========================================
+
+
+#define INTERVAL_SENSOR   17000            //定义传感器采样时间间隔  597000
+
+#define INTERVAL_NET      17000             //定义发送时间
+//传感器部分================================   
+#include <Wire.h>                                  //调用库  
+#include "./esp8266.h"
+#include "I2Cdev.h"  //调用库  
+#include "./SHT2x.h"
+
+#define  humanHotSensor  A0        //人体传感器引脚
+
+#define voice A2             //蜂鸣器引脚
+
+#define SSID           "huawei"                   // cannot be longer than 32 characters!
+#define PASSWORD       "25523496"
+
+#define IDLE_TIMEOUT_MS  3000      // Amount of time to wait (in milliseconds) with no data 
+                                   // received before closing the connection.  If you know the server
+                                   // you're accessing is quick to respond, you can reduce this value.
+
+//WEBSITE     
+#define HOST_NAME   "api.heclouds.com"     //调用API的网址
+#define DEVICEID   "23255685"          //设备ID
+#define PROJECTID "105033"           //产品ID
+#define HOST_PORT   (80)
+String apiKey="o1ENIWddIyWurD8hSgZTbWmm5aY= ";     //APIkey
+char buf[10];
+
+#define INTERVAL_sensor 2000
+unsigned long sensorlastTime = millis();
+
+
+#define INTERVAL_OLED 1000
+
+String mCottenData;
+String jsonToSend;
+
+bool humanHotState = 0;//人体红外数据
+
+float sensor_tem, sensor_hum;//传感器温度、湿度
+   
+char  sensor_tem_c[7], sensor_hum_c[7], sensor_humanHotState_c[7] ;    //换成char数组传输
+
+#include <SoftwareSerial.h>
+SoftwareSerial mySerial(2, 3); /* RX:D3, TX:D2 */
+ESP8266 wifi(mySerial);
+//ESP8266 wifi(Serial1);                                      //定义一个ESP8266（wifi）的对象
+unsigned long net_time1 = millis();                          //数据上传服务器时间
+unsigned long sensor_time = millis();                        //传感器采样时间计时器
+
+//int SensorData;                                   //用于存储传感器数据
+String postString;                                //用于存储发送数据的字符串
+//String jsonToSend;                                //用于存储发送的json格式参数
+
+void setup(void)     //初始化函数  
+{       
+  //初始化串口波特率  
+    Wire.begin();
+    Serial.begin(115200);      //初始化波特率
+    while(!Serial);
+    pinMode(humanHotSensor, INPUT);//初始化人体红外传感器
+    pinMode(voice, OUTPUT); //初始化蜂鸣器
+   //ESP8266初始化
+    Serial.print("setup begin\r\n");   
+
+  Serial.print("FW Version:");
+  Serial.println(wifi.getVersion().c_str());
+
+  if (wifi.setOprToStationSoftAP()) {
+    Serial.print("to station + softap ok\r\n");
+  } else {
+    Serial.print("to station + softap err\r\n");
+  }
+
+  if (wifi.joinAP(SSID, PASSWORD)) {      //加入无线网
+    Serial.print("Join AP success\r\n");  
+    Serial.print("IP: ");
+    Serial.println(wifi.getLocalIP().c_str());
+  } else {
+    Serial.print("Join AP failure\r\n");
+  }
+
+  if (wifi.disableMUX()) {
+    Serial.print("single ok\r\n");
+  } else {
+    Serial.print("single err\r\n");
+  }
+
+  Serial.print("setup end\r\n");
+    
+
+
+  rtc.begin();
+  rtc.clearAll();
+  //设置启动时间
+  rtc.setDateTime(dateTime);
+}
+void loop(void)     //循环函数  
+{   
+  /*//通过getDataTime获取时间
+  rtc.getDateTime(&dateTime);
+  Serial.println("CODE_1:");
+  Serial.print(dateTime.year);
+  Serial.print("/");
+  Serial.print(dateTime.month);
+  Serial.print("/");
+  Serial.print(dateTime.day);
+  Serial.print("     ");
+  Serial.print(dateTime.hour);
+  Serial.print(":");
+  Serial.print(dateTime.minute);
+  Serial.print(":");
+  Serial.print(dateTime.second);
+  Serial.print("\r\n");*/
+
+  //通过getXX() 获取具体时间
+  rtc.getDate(&tYear, &tMonth, &tWeekday, &tDay);
+  rtc.getTime(&tHour, &tMinute, &tSecond);
+  
+  Serial.println("CODE_2:");
+  Serial.print(tYear);
+  Serial.print("/");
+  Serial.print(tMonth);
+  Serial.print("/");
+  Serial.print(tDay);
+  Serial.print("     ");
+  Serial.print(tHour);       //向串口监视器上传时间数据
+  Serial.print(":");
+  Serial.print(tMinute);
+  Serial.print(":");
+  Serial.print(tSecond);
+  Serial.print("\r\n");
+
+  delay(1000);
+  Serial.print("\r\n");
+
+  
+  
+  
+  if(tHour>=21&&tMinute>=9)                   //设定报警器的工作时间，可根据个人需要调整
+  {
+  if (sensor_time > millis())  sensor_time = millis();  
+    
+  if(millis() - sensor_time > INTERVAL_SENSOR)              //传感器采样时间间隔  
+  {  
+    getSensorData();                                        //读串口中的传感器数据
+    sensor_time = millis();
+  }  
+
+    
+  if (net_time1 > millis())  net_time1 = millis();
+  
+  if (millis() - net_time1 > INTERVAL_NET)                  //发送数据时间间隔
+  {                
+    updateSensorData();                                     //将数据上传到服务器的函数
+    net_time1 = millis();
+  }
+
+  if(humanHotState==1)
+{
+ tone(voice,500);  //蜂鸣器报警
+}
+else
+{
+  noTone(voice);  //蜂鸣器不报警
+  }
+  }
+}
+
+void getSensorData(){  
+    sensor_tem = SHT2x.GetTemperature() ;   //获取寝室温湿度
+    sensor_hum = SHT2x.GetHumidity();   
+
+    
+    humanHotState =digitalRead(humanHotSensor); //获取人体红外信息
+
+    dtostrf(sensor_tem, 2, 1, sensor_tem_c);
+    dtostrf(sensor_hum, 2, 1, sensor_hum_c);
+    dtostrf(humanHotState, 2, 1, sensor_humanHotState_c);   //转换所获数据
+}
+void updateSensorData() {
+  if (wifi.createTCP(HOST_NAME, HOST_PORT)) { //建立TCP连接，如果失败，不能发送该数据
+    Serial.print("create tcp ok\r\n");
+
+jsonToSend="{\"Temperature\":";
+    dtostrf(sensor_tem,1,2,buf);
+    jsonToSend+="\""+String(buf)+"\"";
+    jsonToSend+=",\"Humidity\":";
+    dtostrf(sensor_hum,1,2,buf);
+    jsonToSend+="\""+String(buf)+"\"";
+    jsonToSend+=",\"Light\":";             
+    dtostrf(humanHotState,1,2,buf);        //将人体红外信息上传至onenet的数据名设为Light
+    jsonToSend+="\""+String(buf)+"\"";
+    jsonToSend+="}";
+
+
+
+
+
+    postString="POST /devices/";
+    postString+=DEVICEID;
+    postString+="/datapoints?type=3 HTTP/1.1";
+    postString+="\r\n";
+    postString+="api-key:";
+    postString+=apiKey;
+    postString+="\r\n";
+    postString+="Host:api.heclouds.com\r\n";
+    postString+="Connection:close\r\n";
+    postString+="Content-Length:";
+    postString+=jsonToSend.length();
+    postString+="\r\n";
+    postString+="\r\n";
+    postString+=jsonToSend;
+    postString+="\r\n";
+    postString+="\r\n";
+    postString+="\r\n";
+
+  const char *postArray = postString.c_str();                 //将str转化为char数组
+  Serial.println(postArray);
+  wifi.send((const uint8_t*)postArray, strlen(postArray));    //send发送命令，参数必须是这两种格式，尤其是(const uint8_t*)
+  Serial.println("send success");   
+     if (wifi.releaseTCP()) {                                 //释放TCP连接
+        Serial.print("release tcp ok\r\n");
+        } 
+     else {
+        Serial.print("release tcp err\r\n");
+        }
+      postArray = NULL;                                       //清空数组，等待下次传输数据
+  
+  } else {
+    Serial.print("create tcp err\r\n");
+  }
+  
+}
